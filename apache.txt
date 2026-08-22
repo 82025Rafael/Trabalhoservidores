@@ -1,0 +1,162 @@
+Aqui está o conteúdo de todos os slides organizado e reformatado de forma clara, estruturada e legível:
+
+---
+
+# Implementando HTTPS e Criptografia no Apache
+
+## 1. Conceitos Fundamentais
+
+### O Problema do HTTP Tradicional (Porta 80)
+
+* O protocolo HTTP trafega dados em texto claro (*plain text*).
+* Se alguém digitar uma senha em um formulário HTTP, qualquer pessoa na mesma rede Wi-Fi ou no provedor de internet pode capturar os pacotes com um farejador de rede (ex: Wireshark) e ler a senha em texto puro.
+
+### A Solução: HTTPS (Porta 443)
+
+O HTTPS não é um protocolo novo, mas sim o HTTP rodando sobre uma camada de segurança chamada **TLS** (*Transport Layer Security* — antigo SSL). Ele garante três pilares:
+
+* **Criptografia:** Ninguém no caminho consegue ler os dados trafegados.
+* **Integridade:** Os dados não podem ser alterados no meio do caminho (proteção contra ataques *Man-in-the-Middle*).
+* **Autenticidade:** Prova que o site acessado é realmente quem diz ser.
+
+### Como Funciona a Criptografia Assimétrica
+
+O HTTPS baseia-se em um par de chaves criptográficas:
+
+* **Chave Pública (Certificado `.crt`):** Distribuída livremente. O navegador do cliente a utiliza para criptografar (trancar) os dados. Uma vez trancados, apenas a chave privada correspondente consegue destrancá-los.
+* **Chave Privada (`.key`):** Mantida em segredo absoluto dentro do servidor. O Apache a utiliza para descriptografar (abrir) os dados enviados pelos clientes.
+> **Regra de Ouro:** Se a chave privada vazar, a segurança de todo o site cai.
+
+
+
+### Certificado Autoassinado
+
+* Para migrar de HTTP para HTTPS, é necessário habilitar o módulo `mod_ssl` no Apache e indicar o par de chaves (chave privada + certificado público).
+* Em ambiente de teste/local, atuamos como nossa própria Autoridade Certificadora. O site será criptografado, mas o navegador exibirá um alerta por não ser uma entidade global reconhecida.
+
+---
+
+## 2. Passo a Passo Prático (Ambiente Local)
+
+### Passo 1: Habilitar os Módulos de Segurança no Apache
+
+```bash
+sudo a2enmod ssl
+sudo a2enmod rewrite
+
+```
+
+### Passo 2: Criar o Par de Chaves Criptográficas (OpenSSL)
+
+```bash
+sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+-keyout /etc/ssl/private/apache-selfsigned.key \
+-out /etc/ssl/certs/apache-selfsigned.crt
+
+```
+
+* **Atenção:** O terminal fará perguntas sobre a organização. No campo **Common Name (e.g. server FQDN)**, digite o domínio exato do projeto (ex: `meusite.local`). Se preenchido incorretamente, o certificado falhará.
+
+### Passo 3: Criar o Arquivo de Virtual Host do HTTPS (Porta 443)
+
+Edite o arquivo `meusite.local-ssl.conf`:
+
+```apache
+<IfModule mod_ssl.c>
+    <VirtualHost *:443>
+        ServerAdmin admin@meusite.local
+        ServerName meusite.local
+        DocumentRoot /home/seu_usuario/public_html/html
+
+        # 1. Ativar o motor de criptografia SSL
+        SSLEngine on
+
+        # 2. Apontar o Certificado Público (enviado ao navegador)
+        SSLCertificateFile /etc/ssl/certs/apache-selfsigned.crt
+
+        # 3. Apontar a Chave Privada (SECRETA, do servidor)
+        SSLCertificateKeyFile /etc/ssl/private/apache-selfsigned.key
+
+        <Directory /home/seu_usuario/public_html/html>
+            Options -Indexes +FollowSymLinks
+            AllowOverride All
+            Require all granted
+        </Directory>
+
+        ErrorLog ${APACHE_LOG_DIR}/meusite_ssl_error.log
+        CustomLog ${APACHE_LOG_DIR}/meusite_ssl_access.log combined
+    </VirtualHost>
+</IfModule>
+
+```
+
+### Passo 4: Ativar o Site SSL e Reiniciar o Apache
+
+```bash
+sudo a2ensite meusite.local-ssl.conf
+sudo systemctl restart apache2
+
+```
+
+### Passo 5: Teste de Validação no Navegador
+
+Ao acessar `[https://meusite.local](https://meusite.local)`:
+
+1. O navegador exibirá o aviso: *"Sua conexão não é privada"* ou *"Risco de segurança"*.
+2. Isso prova que a criptografia está funcionando (o aviso ocorre porque o certificado foi autoassinado).
+3. Clique em **Avançado -> Continuar para meusite.local (inseguro)**. O site abrirá criptografado.
+
+### Passo 6: Forçar Redirecionamento (HTTP ⇒ HTTPS)
+
+Para que todo tráfego da porta 80 seja enviado automaticamente para a porta 443, edite o arquivo `/etc/apache2/sites-available/meusite.local.conf`:
+
+```apache
+<VirtualHost *:80>
+    ServerName meusite.local
+    ServerAlias www.meusite.local
+    # Redireciona permanentemente (Código 301) todo o tráfego para HTTPS
+    Redirect permanent / https://meusite.local/
+</VirtualHost>
+
+```
+
+Aplique a alteração:
+
+```bash
+sudo systemctl reload apache2
+
+```
+
+---
+
+## 3. Implementação em Ambiente Real (Let's Encrypt)
+
+Em servidores na internet com domínio público real (ex: `meusite.com`), o processo é automatizado pelo **Certbot**:
+
+```bash
+# 1. Instalar o gerenciador Certbot
+sudo apt install certbot python3-certbot-apache -y
+
+# 2. Solicitar o certificado e configurar o Apache automaticamente
+sudo certbot --apache -d meusite.com -d www.meusite.com
+
+```
+
+### Como o Certbot atua nos bastidores:
+
+1. Cria um arquivo secreto no site para provar à Let's Encrypt que você controla o domínio.
+2. Baixa os certificados oficiais para `/etc/letsencrypt/`.
+3. Edita os arquivos `.conf` do Apache, inserindo as diretivas `SSLEngine` e as regras de redirecionamento HTTP ⇒ HTTPS automaticamente.
+
+---
+
+## 4. Atividade Prática 2
+
+1. Criar os arquivos para o novo site no diretório `/home/usuário/public_html/NOVO/html`.
+2. Criar a nova página dentro do novo diretório.
+3. Habilitar o acesso SSH e o redirecionamento HTTP ⇒ HTTPS para o site situado no diretório `public_html` do seu usuário.
+4. **Documentar o passo a passo.**
+
+---
+
+

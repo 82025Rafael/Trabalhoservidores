@@ -1,0 +1,238 @@
+Aqui está o texto reescrito de forma simples, organizada e com a contagem dos passos e seções corrigida continuamente em Markdown básico:
+
+---
+
+# Servidor WEB — Nginx (HTTP e HTTPS)
+
+## 1. Visão Geral do Nginx
+
+O Nginx foi criado em 2004 para resolver o desafio conhecido como "problema C10K" (como lidar com 10.000 conexões simultâneas em uma única máquina).
+
+* **Arquitetura:** Orientada a eventos e assíncrona. Um único processo do Nginx consegue gerenciar milhares de conexões ao mesmo tempo em um único laço de eventos, sem precisar criar uma nova *thread* para cada cliente.
+* **Vantagens:** Consumo de CPU e memória RAM baixo e previsível. É excelente para entregar arquivos estáticos (HTML, CSS, imagens) e atuar como Proxy Reverso e Balanceador de Carga.
+* **Ponto Fraco:** Não processa código dinâmico (como PHP ou Python) diretamente, precisando repassar essa tarefa para um interpretador externo (como o PHP-FPM).
+
+---
+
+## 2. Preparação e Instalação
+
+### Passo 1: Preparar o Ambiente (Parar o Apache)
+
+Como o Apache e o Nginx utilizam a mesma porta padrão (Porta 80), eles não podem ser executados ao mesmo tempo na mesma porta. Por isso, é necessário parar o Apache antes de instalar o Nginx:
+
+```bash
+sudo systemctl stop apache2
+
+# Opcional: Impedir o Apache de iniciar junto com o sistema por enquanto
+sudo systemctl disable apache2
+
+```
+
+### Passo 2: Instalação do Nginx
+
+O Nginx está disponível nos repositórios oficiais do Ubuntu:
+
+```bash
+sudo apt update
+sudo apt install nginx -y
+
+```
+
+Após a instalação, verifique se o serviço está ativo:
+
+```bash
+sudo systemctl status nginx
+
+```
+
+### Passo 3: Ajustar o Firewall (UFW)
+
+Assim como no Apache, é preciso liberar o tráfego do Nginx no firewall do Ubuntu:
+
+```bash
+# Listar os perfis disponíveis para o Nginx
+sudo ufw app list
+
+# Permitir apenas tráfego HTTP comum por enquanto
+sudo ufw allow 'Nginx HTTP'
+
+```
+
+---
+
+## 3. Criando o Primeiro Server Block
+
+### Conceito
+
+* No Apache, as configurações de sites são chamadas de **Virtual Hosts**. No Nginx, são chamadas de **Server Blocks** (Blocos de Servidor).
+* No Ubuntu, o Nginx adota a mesma estrutura de pastas do Apache:
+* **`sites-available`**: Onde ficam armazenados os arquivos de configuração.
+* **`sites-enabled`**: Onde ficam os links simbólicos para ativar os sites.
+
+
+
+### Passo 1: Criar o Diretório do Site e o Arquivo HTML
+
+Crie a estrutura de pastas dentro do diretório padrão do sistema:
+
+```bash
+# Criar o diretório do site
+sudo mkdir -p /var/www/meusitenginx.local/html
+
+# Configurar as permissões
+sudo chown -R $USER:$USER /var/www/meusitenginx.local/html
+sudo chmod -R 755 /var/www/meusitenginx.local
+
+# Criar a página de teste
+sudo nano /var/www/meusitenginx.local/html/index.html
+
+```
+
+**Conteúdo a adicionar no arquivo `index.html`:**
+
+```html
+<h1>Nginx Funcionando no Ubuntu Server!</h1>
+
+```
+
+### Passo 2: Escrever a Configuração do Server Block
+
+A sintaxe do Nginx utiliza chaves `{ }` e ponto e vírgula `;`, sendo considerada mais limpa e legível que o XML do Apache.
+
+Abra um arquivo novo para o seu domínio:
+
+```bash
+sudo nano /etc/nginx/sites-available/meusitenginx.local
+
+```
+
+Cole a configuração padrão a seguir:
+
+```nginx
+server {
+    # 1. Porta em que o Nginx vai escutar
+    listen 80;
+    listen [::]:80;
+
+    # 2. O nome do domínio que este bloco vai capturar
+    server_name meusitenginx.local www.meusitenginx.local;
+
+    # 3. A pasta raiz onde estão os arquivos do site
+    root /var/www/meusitenginx.local/html;
+
+    # 4. Os arquivos de índice que ele deve procurar por padrão
+    index index.html index.htm;
+
+    # 5. A regra de roteamento principal (Se o arquivo existir, entregue; se não, retorne 404)
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
+
+```
+
+### Passo 3: Ativação e Validação do Site
+
+Para ativar o site, crie um link simbólico apontando o arquivo da pasta `sites-available` para a pasta `sites-enabled`:
+
+```bash
+sudo ln -s /etc/nginx/sites-available/meusitenginx.local /etc/nginx/sites-enabled/
+
+```
+
+Valide se não há erros de digitação ou falta de ponto e vírgula antes de reiniciar o servidor:
+
+```bash
+sudo nginx -t
+
+```
+
+O retorno esperado é:
+`nginx: configuration file /etc/nginx/nginx.conf test is successful`
+
+Reinicie o Nginx para aplicar as alterações:
+
+```bash
+sudo systemctl restart nginx
+
+```
+
+### Passo 4: Teste no Navegador
+
+Para acessar o site pelo nome `meusitenginx.local`, o computador cliente precisa saber a qual IP o domínio pertence:
+
+1. Abra o arquivo `hosts` do seu sistema operacional hospedeiro.
+2. Adicione as seguintes linhas apontando para o IP do seu servidor Nginx:
+
+```text
+IP.do.servidor.nginx meusitenginx.local
+IP.do.servidor.nginx www.meusitenginx.local
+
+```
+
+3. Abra o navegador e acesse: `[http://meusitenginx.local](http://meusitenginx.local)`
+
+---
+
+## 4. Alterando a Porta Padrão
+
+1. Abra o arquivo de configuração do site (ou o arquivo `default` do sistema):
+
+```bash
+sudo nano /etc/nginx/sites-available/meusitenginx.local
+
+```
+
+2. Localize as diretivas `listen` e altere a porta de `80` para `8080`.
+3. Libere a nova porta no Firewall (UFW):
+
+```bash
+sudo ufw allow 8080/tcp
+
+```
+
+4. Teste a sintaxe e reinicie o serviço:
+
+```bash
+sudo nginx -t
+sudo systemctl restart nginx
+
+```
+
+5. Acesse no navegador: `[http://meusitenginx.local:8080](http://meusitenginx.local:8080)`
+
+---
+
+## 5. Alterando o Diretório Padrão
+
+Para mover a raiz do site para dentro da pasta pessoal do usuário (`public_html`):
+
+1. Crie a pasta `public_html` dentro da sua Home e adicione uma página de teste.
+2. Ajuste as permissões de acesso para o usuário do servidor web (`www-data`):
+
+```bash
+# 1. Permitir que o Nginx acesse a sua pasta de usuário
+sudo chmod o+x /home/seu_usuario
+
+# 2. Permitir que o Nginx leia o conteúdo da pasta public_html
+sudo chmod -R 755 /home/seu_usuario/public_html
+
+```
+
+3. Atualize a diretiva `root` no arquivo do Nginx:
+
+```bash
+sudo nano /etc/nginx/sites-available/meusitenginx.local
+
+```
+
+4. Valide a sintaxe e recarregue o serviço:
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+
+```
+
+5. Acesse no navegador: `[http://meusitenginx.local:8080](http://meusitenginx.local:8080)`
+
