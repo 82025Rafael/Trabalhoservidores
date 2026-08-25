@@ -1,0 +1,1 @@
+sudo ./deploy.sh --site meu_site.zip --dominio exemplo.local --porta 8080 --engine nginx
